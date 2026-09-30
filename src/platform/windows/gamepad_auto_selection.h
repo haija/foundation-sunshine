@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Limelight.h>
+extern "C" {
+#include "third-party/moonlight-common-c/src/Limelight.h"
+}
 
 namespace platf {
   // Only controller-arrival metadata is used: never guesses game support.
