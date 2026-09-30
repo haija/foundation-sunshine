@@ -27,7 +27,7 @@ SERVICE_STATUS service_status;
 HANDLE stop_event;
 HANDLE session_change_event;
 
-#define SERVICE_NAME "SunshineService"
+#define SERVICE_NAME "SunshineCodexService"
 
 DWORD WINAPI
 HandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext) {
@@ -603,7 +603,10 @@ ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
       gui_agent_last_error = ERROR_SUCCESS;
       gui_agent_retry_at_ms = 0;
       gui_agent_backoff.reset();
-      gui_agent_restart_policy.resume_supervision();
+      // Sunshine Codex is administered through its dedicated web shortcut.
+      // The upstream tray helper assumes the stock service/port identity and
+      // repeatedly polls an unconfigured first-run UI, so never auto-launch it.
+      gui_agent_restart_policy.suppress_launch();
       gui_agent_log_limiter.reset();
     }
 
@@ -654,7 +657,7 @@ ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     }
 
     if (!gui_agent_restart_policy.launch_allowed()) {
-      gui_agent_restart_policy.resume_supervision();
+      gui_agent_restart_policy.suppress_launch();
       gui_agent_last_error = ERROR_SUCCESS;
       gui_agent_retry_at_ms = 0;
       gui_agent_backoff.reset();

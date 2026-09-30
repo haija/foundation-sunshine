@@ -10,9 +10,9 @@ for %%A in (%*) do (
 rem Get sunshine root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
 
-set SERVICE_NAME=SunshineService
+set SERVICE_NAME=SunshineCodexService
 set "SERVICE_BIN=%ROOT_DIR%\tools\sunshinesvc.exe"
-set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\LizardByte\Sunshine"
+set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\Codex\Sunshine Codex"
 set "SERVICE_CONFIG_FILE=%SERVICE_CONFIG_DIR%\service_start_type.txt"
 
 if not exist "%SERVICE_BIN%" (
@@ -23,13 +23,7 @@ if not exist "%SERVICE_BIN%" (
 rem Set service to demand start. It will be changed to auto later if the user selected that option.
 set SERVICE_START_TYPE=demand
 
-rem Remove the legacy SunshineSvc service (NSIS-era name). On clean installs
-rem this service obviously does not exist, so both commands return error
-rem 1060 / "service name invalid". Silence stdout+stderr — we don't care
-rem about the failure, and the noise was confusing users into thinking
-rem something was wrong with the new install.
-net stop sunshinesvc >nul 2>&1
-sc delete sunshinesvc >nul 2>&1
+rem This is a side-by-side build. Never stop or delete another Sunshine/Apollo service.
 
 rem Decide: reconfigure existing service vs create a new one.
 rem `sc config` happily updates binPath in-place, so cross-directory
@@ -75,7 +69,7 @@ rem security gap. The `"\"%SERVICE_BIN%\""` form is what produces that:
 rem outer "..." is one cmd token; inner \"...\" become real quotes in the
 rem argv that sc.exe receives. Triple-quoting (`"""..."""`) splits on
 rem internal spaces and makes sc print its usage banner instead.
-sc !SC_CMD! %SERVICE_NAME% binPath= "\"%SERVICE_BIN%\"" start= !SC_START_TYPE! DisplayName= "Sunshine Service"
+sc !SC_CMD! %SERVICE_NAME% binPath= "\"%SERVICE_BIN%\"" start= !SC_START_TYPE! DisplayName= "Sunshine Codex Service"
 if errorlevel 1 (
     echo ERROR: Failed to !SC_CMD! %SERVICE_NAME%.
     exit /b 1
@@ -91,7 +85,7 @@ if /I "!SERVICE_START_TYPE!"=="delayed-auto" (
 
 rem Description is metadata only; AV / SCM contention may transiently
 rem block it. Never abort install over a missing description string.
-sc description %SERVICE_NAME% "Sunshine is a self-hosted game stream host for Moonlight." >nul 2>&1
+sc description %SERVICE_NAME% "Sunshine Codex custom game-stream host for Moonlight." >nul 2>&1
 
 if defined SKIP_START (
     echo %SERVICE_NAME% installed without starting; a pending driver operation must finish first.

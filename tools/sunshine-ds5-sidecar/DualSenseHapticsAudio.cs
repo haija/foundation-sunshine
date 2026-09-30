@@ -10,6 +10,8 @@ internal static class DualSenseHapticsAudio
     internal const string GenshinCompatibilityProfileId = "dualsense-composite-genshin";
     internal const string CompositeProductString = "DualSense Wireless Controller";
     internal const string GenshinCompatibilityProductString = "Wireless Controller";
+    private const string NativeGamePadUsage = "05010905";
+    private const string SafeJoystickUsage = "05010904";
     internal const int InputChannels = 4;
     internal const int OutputChannels = 2;
     internal const int BitsPerSample = 16;
@@ -36,6 +38,15 @@ internal static class DualSenseHapticsAudio
     {
         var root = JsonNode.Parse(compositeJson.Span)?.AsObject()
                    ?? throw new InvalidDataException("Composite profile is not a JSON object");
+        var descriptor = root["descriptor"]?.GetValue<string>()
+                         ?? throw new InvalidDataException("Composite profile has no HID descriptor");
+        if (!descriptor.StartsWith(NativeGamePadUsage, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Composite profile has an unexpected HID application usage");
+        // The native Sony report bytes are unchanged, but Windows' generic
+        // Game Pad decoder reads them as RT=0.5 and RSY=1 at rest and makes
+        // win32k repeat desktop navigation keys. Joystick usage bypasses that
+        // template while retaining the four USB audio interfaces and HID I/O.
+        root["descriptor"] = SafeJoystickUsage + descriptor[NativeGamePadUsage.Length..];
         var controls = root["usbConfiguration"]?["audioControls"]?.AsArray()
                        ?? throw new InvalidDataException("Composite profile has no USB audio controls");
         var speaker = controls.Select(control => control?.AsObject())
@@ -75,6 +86,12 @@ internal static class DualSenseHapticsAudio
         RequireString(root, "id", expectedId);
         RequireString(root, "productString", expectedProductString);
         RequireString(root, "backend", "usbip");
+        if (!root.TryGetProperty("descriptor", out var descriptor) ||
+            descriptor.ValueKind != JsonValueKind.String ||
+            !descriptor.GetString()!.StartsWith(SafeJoystickUsage, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Composite profile must use the safe Joystick application usage");
+        }
 
         if (!root.TryGetProperty("usbConfiguration", out var configuration) ||
             !configuration.TryGetProperty("interfaces", out var interfaces) ||
