@@ -367,6 +367,18 @@ namespace platf::ds5 {
             }
           }
           break;
+        case message_e::controller_audio_pcm:
+          if (p.size() >= 24 && p[0] == owned_index) {
+            const auto frames = read_u16(p.data() + 4);
+            const auto pcm_size = static_cast<std::size_t>(frames) * 8;
+            if (p[3] == 4 && p[6] == 16 && read_u32(p.data() + 20) == 48000 &&
+                frames <= 240 && p.size() == 24 + pcm_size) {
+              feedback_queue->raise(gamepad_feedback_msg_t::make_ds5_audio_pcm(
+                p[1], p[2], frames, read_u32(p.data() + 8), read_u64(p.data() + 12),
+                p.data() + 24, pcm_size));
+            }
+          }
+          break;
         case message_e::audio_policy_violation:
           if (p.size() == 4 && p[0] == owned_index) {
             static constexpr std::array<std::string_view, 3> role_names {

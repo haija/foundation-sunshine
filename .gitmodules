@@ -16,7 +16,7 @@
 	branch = stable
 [submodule "third-party/moonlight-common-c"]
 	path = third-party/moonlight-common-c
-	url = https://github.com/qiin2333/moonlight-common-c.git
+	url = https://github.com/haija/moonlight-common-c.git
 	branch = mic
 [submodule "third-party/nanors"]
 	path = third-party/nanors
@@ -79,7 +79,7 @@
 	branch = master
 [submodule "src_assets/common/sunshine-control-panel"]
 	path = src_assets/common/sunshine-control-panel
-	url = https://github.com/qiin2333/sunshine-control-panel.git
+	url = https://github.com/haija/sunshine-control-panel.git
 	branch = main
 [submodule "third-party/moonlight-audio-haptics"]
 	path = third-party/moonlight-audio-haptics

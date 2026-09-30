@@ -190,7 +190,8 @@ internal sealed class VirtualDeviceHostServer : IAsyncDisposable
 
     private void Emit(Protocol.Message message)
     {
-        var written = message.Type is Protocol.MessageType.HapticsPcm
+        var written = message.Type is Protocol.MessageType.HapticsPcm or
+                                      Protocol.MessageType.ControllerAudioPcm
             ? _realtimeOutgoing.Writer.TryWrite(message)
             : _controlOutgoing.Writer.TryWrite(message);
         if (written)

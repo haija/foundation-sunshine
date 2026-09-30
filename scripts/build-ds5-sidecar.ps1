@@ -122,7 +122,7 @@ if ($LASTEXITCODE -ne 0) {
 # package. Excluding it here keeps the Sunshine installer first-party-only.
 Remove-Item -LiteralPath (Join-Path $output 'HIDMaestro.Core.dll') -Force
 $runtimeMetadata = @{
-    component_version = '1.2.0'
+    component_version = '1.3.0'
     protocol = 1
     target = 'win-x64-self-contained'
     hidmaestro_build_version = $version

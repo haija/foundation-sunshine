@@ -24,7 +24,9 @@ internal sealed class ControllerSession : IDisposable
     private const uint Y = 0x8000;
     private const uint Touchpad = 0x100000;
     private const uint Misc = 0x200000;
-    private const int HapticsFramesPerPacket = 240;
+    // Keep the encrypted 0x550D quad packet below ENet's normal path MTU.
+    // This is the same 3 ms cadence used by Apollo Extended.
+    private const int HapticsFramesPerPacket = 144;
     private static readonly TimeSpan StateCoalesceWindow = TimeSpan.FromMilliseconds(4);
 
     private readonly object _stateLock = new();
@@ -41,6 +43,7 @@ internal sealed class ControllerSession : IDisposable
     private readonly Dictionary<uint, int> _touchSlots = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private int _hapticsSequence = -1;
+    private int _controllerAudioSequence = -1;
     private int _hapticsStreaming;
     private int _hapticsNeedsStart;
     private int _asyncSubmitFailureReported;
@@ -370,6 +373,7 @@ internal sealed class ControllerSession : IDisposable
             // A stale sub-frame tail from the old stream must not splice into
             // the first frame of the next stream.
             _audioResidual = Array.Empty<byte>();
+            EmitControllerAudio(ReadOnlySpan<byte>.Empty, 0, Protocol.HapticsFlags.StreamEnd);
             EmitHaptics(ReadOnlySpan<byte>.Empty, 0, Protocol.HapticsFlags.StreamEnd);
         }
     }
@@ -405,9 +409,35 @@ internal sealed class ControllerSession : IDisposable
                         Interlocked.Exchange(ref _hapticsNeedsStart, 0) != 0
                 ? Protocol.HapticsFlags.StreamStart
                 : Protocol.HapticsFlags.None;
+            EmitControllerAudio(
+                source.Slice(offsetFrames * sourceFrameBytes, frames * sourceFrameBytes),
+                (ushort)frames,
+                flags);
             EmitHaptics(haptics, (ushort)frames, flags);
             offsetFrames += frames;
         }
+    }
+
+    private void EmitControllerAudio(ReadOnlySpan<byte> pcm, ushort frameCount,
+        Protocol.HapticsFlags flags)
+    {
+        // The wire header intentionally matches authored haptics PCM. Channels
+        // 1/2 are the controller speaker program and 3/4 are native haptics.
+        var payload = new byte[24 + pcm.Length];
+        payload[0] = DeviceId;
+        payload[1] = ClientControllerNumber;
+        payload[2] = (byte)flags;
+        payload[3] = DualSenseHapticsAudio.InputChannels;
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(4, 2), frameCount);
+        payload[6] = DualSenseHapticsAudio.BitsPerSample;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4),
+            unchecked((uint)Interlocked.Increment(ref _controllerAudioSequence)));
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(12, 8),
+            (ulong)ElapsedMicroseconds());
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(20, 4),
+            DualSenseHapticsAudio.SampleRateHz);
+        pcm.CopyTo(payload.AsSpan(24));
+        _emit(new Protocol.Message(Protocol.MessageType.ControllerAudioPcm, 0, payload));
     }
 
     private void EmitHaptics(ReadOnlySpan<byte> pcm, ushort frameCount, Protocol.HapticsFlags flags)

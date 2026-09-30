@@ -46,7 +46,8 @@ internal sealed class DeviceRegistry : IDisposable
             ? Protocol.Capability.GenshinCompatibilityIdentity
             : 0) |
         (_authoredHapticsAvailable
-            ? Protocol.Capability.AudioFourChannel | Protocol.Capability.AuthoredHapticsPcm
+            ? Protocol.Capability.AudioFourChannel | Protocol.Capability.AuthoredHapticsPcm |
+              Protocol.Capability.ControllerAudioPcm
             : 0) |
         (_microphonePrototypeAvailable
             ? Protocol.Capability.VirtualMicrophone |
@@ -123,7 +124,8 @@ internal sealed class DeviceRegistry : IDisposable
                        ? Protocol.Capability.GenshinCompatibilityIdentity
                        : 0) |
                    (session.HasAudio
-                       ? Protocol.Capability.AudioFourChannel | Protocol.Capability.AuthoredHapticsPcm
+                       ? Protocol.Capability.AudioFourChannel | Protocol.Capability.AuthoredHapticsPcm |
+                         Protocol.Capability.ControllerAudioPcm
                        : 0)));
         _emit(new Protocol.Message(Protocol.MessageType.AttachReply, requestId, reply));
         session.StartDefaultAudioEndpointGuard();

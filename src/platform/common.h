@@ -106,6 +106,7 @@ namespace platf {
     set_rgb_led,  ///< Set RGB LED
     set_adaptive_triggers,  ///< Set adaptive triggers
     ds5_haptics_pcm,  ///< Authored DualSense actuator PCM (48 kHz, stereo, S16LE)
+    ds5_audio_pcm,  ///< DualSense speaker and actuator PCM (48 kHz, quad, S16LE)
   };
 
   struct gamepad_feedback_msg_t {
@@ -171,6 +172,22 @@ namespace platf {
       return msg;
     }
 
+    static gamepad_feedback_msg_t
+    make_ds5_audio_pcm(std::uint16_t id, std::uint8_t flags, std::uint16_t frame_count,
+      std::uint32_t sequence, std::uint64_t presentation_time_us,
+      const std::uint8_t *pcm, std::size_t pcm_size) {
+      gamepad_feedback_msg_t msg {};
+      msg.type = gamepad_feedback_e::ds5_audio_pcm;
+      msg.id = id;
+      msg.data.ds5_audio.flags = flags;
+      msg.data.ds5_audio.frame_count = std::min<std::uint16_t>(frame_count, 240);
+      msg.data.ds5_audio.sequence = sequence;
+      msg.data.ds5_audio.presentation_time_us = presentation_time_us;
+      const auto expected_size = static_cast<std::size_t>(msg.data.ds5_audio.frame_count) * 8;
+      std::copy_n(pcm, std::min(expected_size, pcm_size), msg.data.ds5_audio.pcm.begin());
+      return msg;
+    }
+
     gamepad_feedback_e type;
     std::uint16_t id;
 
@@ -212,6 +229,14 @@ namespace platf {
         std::uint64_t presentation_time_us;
         std::array<std::uint8_t, 240 * 2 * sizeof(std::int16_t)> pcm;
       } ds5_haptics;
+
+      struct {
+        std::uint8_t flags;
+        std::uint16_t frame_count;
+        std::uint32_t sequence;
+        std::uint64_t presentation_time_us;
+        std::array<std::uint8_t, 240 * 4 * sizeof(std::int16_t)> pcm;
+      } ds5_audio;
     } data;
   };
 

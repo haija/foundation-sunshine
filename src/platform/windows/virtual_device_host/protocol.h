@@ -27,6 +27,7 @@ namespace platf::virtual_device_host::protocol {
   inline constexpr std::uint32_t CAP_VIRTUAL_MICROPHONE = 1u << 10;
   inline constexpr std::uint32_t CAP_PERSISTENT_DEVICE_HOST = 1u << 11;
   inline constexpr std::uint32_t CAP_MICROPHONE_STATUS = 1u << 12;
+  inline constexpr std::uint32_t CAP_CONTROLLER_AUDIO_PCM = 1u << 13;
 
   inline constexpr std::uint8_t ATTACH_FLAG_GENSHIN_COMPATIBILITY = 1u << 0;
   inline constexpr std::uint32_t MICROPHONE_SAMPLE_RATE_HZ = 48'000;
@@ -39,7 +40,7 @@ namespace platf::virtual_device_host::protocol {
   inline constexpr std::size_t MIC_PCM_HEADER_SIZE = 20;
   inline constexpr std::size_t MIC_STATUS_PAYLOAD_SIZE = 28;
 
-  enum class message_e: std::uint16_t {
+  enum class message_e : std::uint16_t {
     hello = 1,
     hello_reply = 2,
     attach = 3,
@@ -66,6 +67,7 @@ namespace platf::virtual_device_host::protocol {
     audio_policy_violation = 105,
     host_status = 106,
     mic_status = 107,
+    controller_audio_pcm = 108,
     error = 255,
   };
 

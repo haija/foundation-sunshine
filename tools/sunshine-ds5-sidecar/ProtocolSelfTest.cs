@@ -298,6 +298,8 @@ internal static class ProtocolSelfTest
         Require(capabilities.HasFlag(Protocol.Capability.AdaptiveTriggers), "adaptive trigger capability");
         Require(!composite || capabilities.HasFlag(Protocol.Capability.AudioFourChannel),
             "composite four-channel audio capability");
+        Require(!composite || capabilities.HasFlag(Protocol.Capability.ControllerAudioPcm),
+            "composite controller audio PCM capability");
 
         var input = new byte[20];
         input[0] = 0;
@@ -387,6 +389,7 @@ internal static class ProtocolSelfTest
             hello = true,
             attached = true,
             four_channel_audio = capabilities.HasFlag(Protocol.Capability.AudioFourChannel),
+            controller_audio_pcm = capabilities.HasFlag(Protocol.Capability.ControllerAudioPcm),
             input = true,
             touch = true,
             motion = true,
@@ -458,7 +461,8 @@ internal static class ProtocolSelfTest
             "SDS5 v1 header constants");
         Require((uint)Protocol.Capability.VirtualMicrophone == 1u << 10 &&
                 (uint)Protocol.Capability.PersistentDeviceHost == 1u << 11 &&
-                (uint)Protocol.Capability.MicrophoneStatus == 1u << 12,
+                (uint)Protocol.Capability.MicrophoneStatus == 1u << 12 &&
+                (uint)Protocol.Capability.ControllerAudioPcm == 1u << 13,
             "virtual microphone capability bits");
         const Protocol.Capability microphoneCapabilities =
             Protocol.Capability.VirtualMicrophone |
@@ -469,7 +473,8 @@ internal static class ProtocolSelfTest
         Require((ushort)Protocol.MessageType.MicCreate == 12 &&
                 (ushort)Protocol.MessageType.MicDestroyReply == 18 &&
                 (ushort)Protocol.MessageType.HostStatus == 106 &&
-                (ushort)Protocol.MessageType.MicStatus == 107,
+                (ushort)Protocol.MessageType.MicStatus == 107 &&
+                (ushort)Protocol.MessageType.ControllerAudioPcm == 108,
             "virtual microphone message numbers");
 
         var createPayload = new byte[] { 0x80, 0xbb, 0x00, 0x00, 0x01, 0x10, 0x00, 0x00 };

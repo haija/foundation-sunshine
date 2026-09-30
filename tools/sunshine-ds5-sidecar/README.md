@@ -34,6 +34,11 @@ ending the sidecar.
 Disconnecting the owning pipe disposes every device created by
 that connection. Standard `dualsense` uses UMDF2; `dualsense-composite`
 enables the USB composite HID/audio profile and authored haptics PCM.
+For composite sessions, the sidecar also forwards the complete 48 kHz,
+four-channel stream: channels 1/2 contain game-authored controller-speaker
+audio and channels 3/4 contain the native actuator signal. The sidecar also
+emits the legacy stereo haptics message so older cores and clients retain
+native haptics.
 HID-only attaches actually serve the derived `dualsense-hidonly` profile:
 its top-level collection usage is Joystick (0x04) instead of Game Pad
 (0x05), because the root-enumerated device never gets the native DualSense

@@ -34,6 +34,7 @@ internal static class Protocol
         VirtualMicrophone = 1u << 10,
         PersistentDeviceHost = 1u << 11,
         MicrophoneStatus = 1u << 12,
+        ControllerAudioPcm = 1u << 13,
     }
 
     [Flags]
@@ -71,6 +72,7 @@ internal static class Protocol
         AudioPolicyViolation = 105,
         HostStatus = 106,
         MicStatus = 107,
+        ControllerAudioPcm = 108,
         Error = 255,
     }
 
