@@ -2606,7 +2606,8 @@ namespace stream {
       // permanently: every observation is preceded by that client's touch/mouse
       // packets, and enet_host_service returns per incoming event, so the drain
       // runs on traffic; the idle timeout bounds delivery on a quiet socket.
-      server->iterate(has_ds5_haptics_session ? 5ms :
+      // Keep controller audio and native feedback queues responsive while active.
+      server->iterate(has_ds5_haptics_session ? 1ms :
                       cursor_channel::local_mode_active() ? 16ms : 150ms);
     }
 

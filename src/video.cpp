@@ -3483,6 +3483,10 @@ namespace video {
       }
     }
 
+    auto cadence_sample_start = std::chrono::steady_clock::now();
+    uint64_t cadence_encoded_frames = 0;
+    uint64_t cadence_captured_updates = 0;
+
     while (true) {
       // Break out of the encoding loop if any of the following are true:
       // a) The stream is ending
@@ -3538,6 +3542,7 @@ namespace video {
         if (auto frame = pop_image_interruptible(effective_frame_time, input_activity_boost_policy.useful && !input_boost_active)) {
           auto &img = frame->image;
           if (!frame->is_replay) {
+            ++cadence_captured_updates;
             frame_timestamp = img->frame_timestamp;
             pipeline_trace = img->pipeline_trace.value_or(platf::frame_pipeline_trace_t {});
             if (!pipeline_trace->capture_ready) {
@@ -3587,6 +3592,19 @@ namespace video {
       }
 
       session->request_normal_frame();
+      ++cadence_encoded_frames;
+      const auto cadence_now = std::chrono::steady_clock::now();
+      const auto cadence_seconds = std::chrono::duration<double>(cadence_now - cadence_sample_start).count();
+      if (cadence_seconds >= 5.0) {
+        BOOST_LOG(info) << "Stream cadence: target=" << config.framerate
+                        << " fps, encoded=" << cadence_encoded_frames / cadence_seconds
+                        << " fps, captured_updates=" << cadence_captured_updates / cadence_seconds
+                        << " fps, minimum_fps_target=" << config::video.minimum_fps_target
+                        << ", variable_refresh_rate=" << config::video.variable_refresh_rate;
+        cadence_sample_start = cadence_now;
+        cadence_encoded_frames = 0;
+        cadence_captured_updates = 0;
+      }
     }
   }
 

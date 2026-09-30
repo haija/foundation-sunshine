@@ -1973,6 +1973,19 @@ namespace platf {
     const auto per_app_override = !client_declared && current_gamepad_mode.load(std::memory_order_relaxed) != 0;
     const char *selection_source = client_declared ? "client selection" : (per_app_override ? "per-app selection" : "global selection");
 
+    // In automatic mode, preserve the exact controller family reported by the
+    // client. Moonlight marks a real DualSense that can consume authored PCM
+    // haptics with LI_CCAP_DS5_HAPTICS_PCM. This lets a client switch profiles
+    // at runtime: DualSense gets the DS5 sidecar, while an Xbox or DS4 profile
+    // is recreated through ViGEm as X360 or DS4 when it reconnects.
+    if (gamepad_mode == 1 &&
+        metadata.type == LI_CTYPE_PS &&
+        (metadata.capabilities & LI_CCAP_DS5_HAPTICS_PCM) &&
+        ds5_available) {
+      gamepad_mode = 4;
+      selection_source = "auto-selected by client-reported DualSense capability";
+    }
+
     if (gamepad_mode == 4 && !ds5_available) {
       BOOST_LOG(warning) << "DualSense emulation was requested by "sv << selection_source
                          << ", but its optional component is unavailable; falling back to automatic gamepad selection"sv;

@@ -83,7 +83,9 @@ if (Test-Path -LiteralPath $output) {
 $dotnetSdkError = 'The .NET 10 SDK is required to publish the DualSense sidecar. Install Microsoft.DotNet.SDK.10 and retry.'
 $dotnetCommand = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue
 if ($null -ne $dotnetCommand) {
-    $dotnet = $dotnetCommand.Source
+    # Get-Command can return both a workspace SDK and a global runtime-only
+    # host. Use the first PATH match as one executable, not an array of paths.
+    $dotnet = @($dotnetCommand)[0].Source
 }
 else {
     $dotnet = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'

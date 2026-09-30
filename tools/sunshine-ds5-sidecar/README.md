@@ -39,6 +39,13 @@ four-channel stream: channels 1/2 contain game-authored controller-speaker
 audio and channels 3/4 contain the native actuator signal. The sidecar also
 emits the legacy stereo haptics message so older cores and clients retain
 native haptics.
+The full USB composite profile is patched at runtime to use the same
+Joystick application usage as the HID-only profile. Windows otherwise
+misdecodes its idle Sony report as a held right trigger and an upward right
+stick, causing repeated desktop navigation (issue #1056). This changes only
+the top-level HID application usage; the USB audio interfaces, four-channel
+stream, adaptive-trigger output and Sony report bytes remain unchanged. The
+derived Genshin compatibility profile inherits this safe usage.
 HID-only attaches actually serve the derived `dualsense-hidonly` profile:
 its top-level collection usage is Joystick (0x04) instead of Game Pad
 (0x05), because the root-enumerated device never gets the native DualSense

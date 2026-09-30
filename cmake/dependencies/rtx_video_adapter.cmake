@@ -41,7 +41,15 @@ set(RTX_VIDEO_NGX_APPLICATION_ID "${_rtx_app_id}" CACHE STRING "NGX application 
 
 set(_rtx_source "${CMAKE_SOURCE_DIR}/src/platform/windows/image_enhancement/rtx_hdr/adapter")
 set(_rtx_build "${CMAKE_BINARY_DIR}/image_enhancement/nvidia_rtx_video_adapter")
-set(RTX_VIDEO_ADAPTER_DLL "${_rtx_build}/Release/foundation_rtx_video_adapter.dll")
+set(RTX_VIDEO_ADAPTER_PREBUILT "" CACHE FILEPATH "Trusted RTX Video adapter from an existing Foundation Sunshine release")
+if (RTX_VIDEO_ADAPTER_PREBUILT)
+    if (NOT EXISTS "${RTX_VIDEO_ADAPTER_PREBUILT}" OR IS_DIRECTORY "${RTX_VIDEO_ADAPTER_PREBUILT}")
+        message(FATAL_ERROR "Prebuilt RTX Video adapter is missing: ${RTX_VIDEO_ADAPTER_PREBUILT}")
+    endif ()
+    set(RTX_VIDEO_ADAPTER_DLL "${RTX_VIDEO_ADAPTER_PREBUILT}")
+else ()
+    set(RTX_VIDEO_ADAPTER_DLL "${_rtx_build}/Release/foundation_rtx_video_adapter.dll")
+endif ()
 set(RTX_VIDEO_RUNTIME_DLL "${_rtx_sdk_root}/bin/Windows/x64/rel/nvngx_truehdr.dll")
 set(RTX_VIDEO_TRUST_INCLUDE "${CMAKE_BINARY_DIR}/generated/rtx_video")
 set(RTX_VIDEO_TRUST_HEADER "${RTX_VIDEO_TRUST_INCLUDE}/rtx_video_trust.h")
@@ -99,23 +107,37 @@ if (NOT _rtx_inputs STREQUAL _rtx_previous OR NOT EXISTS "${_rtx_build}/CMakeCac
 endif ()
 
 file(MAKE_DIRECTORY "${RTX_VIDEO_TRUST_INCLUDE}")
-add_custom_command(
-    OUTPUT "${RTX_VIDEO_TRUST_HEADER}"
-    COMMAND "${CMAKE_COMMAND}" --build "${_rtx_build}" --config Release
-        --target foundation_rtx_video_adapter
-    COMMAND "${CMAKE_COMMAND}"
-        "-DADAPTER_PATH=${RTX_VIDEO_ADAPTER_DLL}"
-        "-DRUNTIME_PATH=${RTX_VIDEO_RUNTIME_DLL}"
-        "-DOUTPUT_PATH=${RTX_VIDEO_TRUST_HEADER}"
-        -P "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
-    DEPENDS ${_rtx_adapter_sources}
-        "${_rtx_build}/configure-inputs"
-        "${RTX_VIDEO_RUNTIME_DLL}"
-        "${_rtx_sdk_root}/lib/Windows/x64/nvsdk_ngx_d.lib"
-        "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
-    BYPRODUCTS "${RTX_VIDEO_ADAPTER_DLL}"
-    COMMENT "Building and fingerprinting the optional MSVC RTX Video adapter"
-    VERBATIM)
+if (RTX_VIDEO_ADAPTER_PREBUILT)
+    add_custom_command(
+        OUTPUT "${RTX_VIDEO_TRUST_HEADER}"
+        COMMAND "${CMAKE_COMMAND}"
+            "-DADAPTER_PATH=${RTX_VIDEO_ADAPTER_DLL}"
+            "-DRUNTIME_PATH=${RTX_VIDEO_RUNTIME_DLL}"
+            "-DOUTPUT_PATH=${RTX_VIDEO_TRUST_HEADER}"
+            -P "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
+        DEPENDS "${RTX_VIDEO_ADAPTER_DLL}" "${RTX_VIDEO_RUNTIME_DLL}"
+            "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
+        COMMENT "Fingerprinting the existing RTX Video adapter"
+        VERBATIM)
+else ()
+    add_custom_command(
+        OUTPUT "${RTX_VIDEO_TRUST_HEADER}"
+        COMMAND "${CMAKE_COMMAND}" --build "${_rtx_build}" --config Release
+            --target foundation_rtx_video_adapter
+        COMMAND "${CMAKE_COMMAND}"
+            "-DADAPTER_PATH=${RTX_VIDEO_ADAPTER_DLL}"
+            "-DRUNTIME_PATH=${RTX_VIDEO_RUNTIME_DLL}"
+            "-DOUTPUT_PATH=${RTX_VIDEO_TRUST_HEADER}"
+            -P "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
+        DEPENDS ${_rtx_adapter_sources}
+            "${_rtx_build}/configure-inputs"
+            "${RTX_VIDEO_RUNTIME_DLL}"
+            "${_rtx_sdk_root}/lib/Windows/x64/nvsdk_ngx_d.lib"
+            "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
+        BYPRODUCTS "${RTX_VIDEO_ADAPTER_DLL}"
+        COMMENT "Building and fingerprinting the optional MSVC RTX Video adapter"
+        VERBATIM)
+endif ()
 add_custom_target(sunshine_rtx_video_adapter DEPENDS "${RTX_VIDEO_TRUST_HEADER}")
 set(SUNSHINE_RTX_HDR_AVAILABLE TRUE CACHE INTERNAL "RTX HDR adapter is configured" FORCE)
 message(STATUS "RTX HDR support enabled; the adapter and NVIDIA runtime remain optional at run time")

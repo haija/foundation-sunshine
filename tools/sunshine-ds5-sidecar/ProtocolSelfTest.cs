@@ -830,6 +830,25 @@ internal static class ProtocolSelfTest
         stream.CopyTo(memory);
         var profileJson = DualSenseHapticsAudio.CreateRuntimeCompositeProfile(memory.ToArray());
         DualSenseHapticsAudio.ValidateCompositeProfile(profileJson);
+        using (var bundledDocument = JsonDocument.Parse(memory.ToArray()))
+        using (var runtimeDocument = JsonDocument.Parse(profileJson))
+        {
+            var bundled = bundledDocument.RootElement;
+            var runtime = runtimeDocument.RootElement;
+            var originalDescriptor = bundled.GetProperty("descriptor").GetString()!;
+            var safeDescriptor = runtime.GetProperty("descriptor").GetString()!;
+            Require(originalDescriptor.StartsWith("05010905", StringComparison.OrdinalIgnoreCase) &&
+                    safeDescriptor == "05010904" + originalDescriptor[8..],
+                "composite Joystick usage is the only HID descriptor change");
+            Require(runtime.GetProperty("usbConfiguration").GetProperty("interfaces").GetRawText() ==
+                    bundled.GetProperty("usbConfiguration").GetProperty("interfaces").GetRawText(),
+                "composite USB audio and HID interfaces are unchanged");
+            Require(runtime.GetProperty("extendedReport").GetRawText() ==
+                    bundled.GetProperty("extendedReport").GetRawText() &&
+                    runtime.GetProperty("extendedOutputReport").GetRawText() ==
+                    bundled.GetProperty("extendedOutputReport").GetRawText(),
+                "composite input, adaptive-trigger and speaker reports are unchanged");
+        }
         var compatibilityProfile = DualSenseHapticsAudio.CreateGenshinCompatibilityProfile(profileJson);
         using (var compatibilityDocument = JsonDocument.Parse(compatibilityProfile))
         {
@@ -843,6 +862,8 @@ internal static class ProtocolSelfTest
             Require(root.GetProperty("vid").GetString() == "0x054C" &&
                     root.GetProperty("pid").GetString() == "0x0CE6",
                 "Genshin compatibility profile preserves Sony identity");
+            Require(root.GetProperty("descriptor").GetString()!.StartsWith("05010904", StringComparison.OrdinalIgnoreCase),
+                "Genshin compatibility profile preserves safe Joystick usage");
         }
 
         var profileText = System.Text.Encoding.UTF8.GetString(profileJson);
