@@ -17,6 +17,7 @@
         "SUNSHINE_RTX_HDR": "ON",
         "SUNSHINE_ENABLE_TRAY": "ON",
         "SUNSHINE_ENABLE_LEGACY_TRAY": "OFF",
+        "FETCH_GUI": "OFF",
         "BUILD_TESTS": "ON"
       }
     },

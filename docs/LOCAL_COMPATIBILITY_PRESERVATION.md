@@ -35,7 +35,9 @@ legacy in-process tray **OFF**, tests **ON**, driver downloads **OFF**. Supply
 `RTX_VIDEO_ADAPTER_EXPECTED_SHA256` and `RTX_VIDEO_RUNTIME_EXPECTED_SHA256`
 explicitly. A missing RTX dependency is a configuration failure, not a silent
 fallback to an RTX-disabled build. Configure from the repository working directory.
-The preset does not install or restart applications.
+The preset does not install or restart applications. GUI release auto-download is
+disabled: provide `GUI_DIR` for the reviewed panel built from the pinned gitlink,
+or build that panel locally. Never substitute an unreviewed latest GUI release.
 
 Public common dependency is `61bb873bdc32bdc998d667bf55d86a3d95a1cd16`,
 not the unpublished original `7b147368ab34d09c43a4e87ff9659eef53a0158c`.
