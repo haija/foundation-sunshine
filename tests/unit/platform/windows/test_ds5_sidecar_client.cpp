@@ -11,6 +11,9 @@
 
   #include "src/platform/windows/ds5/ds5_sidecar_client.h"
   #include "src/platform/windows/virtual_device_host/protocol.h"
+  #include "src/stream.h"
+  #include <enet/enet.h>
+  #include <enet/protocol.h>
   #include <gtest/gtest-spi.h>
   #include <gtest/gtest.h>
 
@@ -149,16 +152,141 @@ TEST(VirtualDeviceHostProtocolTests, FreezesSds5V1Abi) {
   EXPECT_EQ(protocol::CAP_VIRTUAL_MICROPHONE, 1u << 10);
   EXPECT_EQ(protocol::CAP_PERSISTENT_DEVICE_HOST, 1u << 11);
   EXPECT_EQ(protocol::CAP_MICROPHONE_STATUS, 1u << 12);
+  EXPECT_EQ(protocol::CAP_CONTROLLER_AUDIO_PCM, 1u << 13);
   EXPECT_EQ(static_cast<std::uint16_t>(protocol::message_e::mic_create), 12u);
   EXPECT_EQ(static_cast<std::uint16_t>(protocol::message_e::mic_status), 107u);
+  EXPECT_EQ(static_cast<std::uint16_t>(protocol::message_e::controller_audio_pcm), 108u);
   EXPECT_EQ(protocol::MIC_CREATE_PAYLOAD_SIZE, 8u);
   EXPECT_EQ(protocol::MIC_CREATE_REPLY_PAYLOAD_SIZE, 16u);
   EXPECT_EQ(protocol::MIC_OPERATION_REPLY_PAYLOAD_SIZE, 8u);
   EXPECT_EQ(protocol::MIC_PCM_HEADER_SIZE, 20u);
   EXPECT_EQ(protocol::MIC_STATUS_PAYLOAD_SIZE, 28u);
   EXPECT_EQ(protocol::MAX_MIC_PCM_FRAMES, 960u);
+  EXPECT_EQ(protocol::CONTROLLER_AUDIO_HEADER_SIZE, 24u);
+  EXPECT_EQ(protocol::MAX_CONTROLLER_AUDIO_FRAMES, 240u);
   EXPECT_EQ(static_cast<std::int32_t>(protocol::mic_result_e::invalid_format), -1001);
   EXPECT_EQ(static_cast<std::int32_t>(protocol::mic_result_e::device_not_created), -1004);
+}
+
+TEST(VirtualDeviceHostProtocolTests, ValidatesControllerAudioPayloadExactly) {
+  namespace protocol = platf::virtual_device_host::protocol;
+  std::vector<std::uint8_t> payload(protocol::CONTROLLER_AUDIO_HEADER_SIZE + 2 * 8);
+  payload[2] = protocol::CONTROLLER_AUDIO_STREAM_START;
+  payload[3] = 4;
+  protocol::write_u16(payload.data() + 4, 2);
+  payload[6] = 16;
+  protocol::write_u32(payload.data() + 20, 48'000);
+  EXPECT_TRUE(protocol::valid_controller_audio_payload(payload.data(), payload.size()));
+
+  auto invalid = payload;
+  invalid[2] = 0x80;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  invalid = payload;
+  invalid[7] = 1;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  invalid = payload;
+  invalid[3] = 2;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  invalid = payload;
+  invalid[6] = 24;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  invalid = payload;
+  protocol::write_u32(invalid.data() + 20, 44'100);
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(payload.data(), payload.size() - 1));
+  invalid = payload;
+  invalid.push_back(0);
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(invalid.data(), invalid.size()));
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(nullptr, payload.size()));
+  protocol::write_u16(payload.data() + 4, protocol::MAX_CONTROLLER_AUDIO_FRAMES + 1);
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(payload.data(), payload.size()));
+
+  std::vector<std::uint8_t> stream_end(protocol::CONTROLLER_AUDIO_HEADER_SIZE);
+  stream_end[2] = protocol::CONTROLLER_AUDIO_STREAM_END;
+  stream_end[3] = 4;
+  stream_end[6] = 16;
+  protocol::write_u32(stream_end.data() + 20, 48'000);
+  EXPECT_TRUE(protocol::valid_controller_audio_payload(stream_end.data(), stream_end.size()));
+  stream_end[2] = 0;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(stream_end.data(), stream_end.size()));
+  stream_end[2] = protocol::CONTROLLER_AUDIO_STREAM_START;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(stream_end.data(), stream_end.size()));
+  stream_end[2] = protocol::CONTROLLER_AUDIO_STREAM_END |
+                  protocol::CONTROLLER_AUDIO_DISCONTINUITY;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(stream_end.data(), stream_end.size()));
+}
+
+TEST(Ds5ControllerAudioTests, EncodesHostWireAndEnforcesPacketBounds) {
+  namespace protocol = platf::virtual_device_host::protocol;
+  std::array<std::uint8_t, 144 * stream::ds5_audio::BYTES_PER_FRAME> pcm {};
+  const auto wire = stream::ds5_audio::encode_wire(
+    7, stream::ds5_audio::STREAM_START, 144, 0x11223344,
+    0x0102030405060708, pcm.data(), pcm.size());
+  ASSERT_EQ(wire.size(), stream::ds5_audio::WIRE_HEADER_SIZE + pcm.size());
+  EXPECT_EQ(wire.size(), 1180u);
+  EXPECT_EQ(wire[0], 1);
+  EXPECT_EQ(wire[1], stream::ds5_audio::STREAM_START);
+  EXPECT_EQ(protocol::read_u16(wire.data() + 2), stream::ds5_audio::WIRE_HEADER_SIZE);
+  EXPECT_EQ(protocol::read_u16(wire.data() + 4), 7);
+  EXPECT_EQ(protocol::read_u16(wire.data() + 6), 144);
+  EXPECT_EQ(protocol::read_u32(wire.data() + 8), 0x11223344u);
+  EXPECT_EQ(protocol::read_u32(wire.data() + 20), 48'000u);
+  EXPECT_EQ(wire[24], 4);
+  EXPECT_EQ(wire[25], 16);
+  EXPECT_EQ(wire[26], 0);
+  EXPECT_EQ(wire[27], 0);
+  EXPECT_LE(wire.size(), 1200u);
+  constexpr auto encrypted_packet_size =
+    crypto::cipher::round_to_pkcs7_padded(4 + 1180) +
+    crypto::cipher::tag_size + 4;
+  static_assert(encrypted_packet_size == 1204);
+  EXPECT_GT(encrypted_packet_size, ENET_HOST_DEFAULT_MTU);
+  EXPECT_LE(encrypted_packet_size, ENET_PROTOCOL_MAXIMUM_MTU);
+  constexpr auto maximum_encrypted_packet_size =
+    crypto::cipher::round_to_pkcs7_padded(
+      4 + stream::ds5_audio::WIRE_HEADER_SIZE +
+      stream::ds5_audio::MAX_FRAMES * stream::ds5_audio::BYTES_PER_FRAME) +
+    crypto::cipher::tag_size + 4;
+  EXPECT_LE(maximum_encrypted_packet_size, ENET_PROTOCOL_MAXIMUM_MTU);
+  EXPECT_EQ(ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT, 1u << 3);
+
+  const auto stream_end = stream::ds5_audio::encode_wire(
+    7, stream::ds5_audio::STREAM_END, 0, 2, 3, nullptr, 0);
+  EXPECT_EQ(stream_end.size(), stream::ds5_audio::WIRE_HEADER_SIZE);
+  EXPECT_TRUE(stream::ds5_audio::encode_wire(7, 0, 0, 2, 3, nullptr, 0).empty());
+  EXPECT_TRUE(stream::ds5_audio::encode_wire(
+    7, stream::ds5_audio::STREAM_START, 1, 2, 3, nullptr, 8).empty());
+}
+
+TEST(Ds5ControllerAudioTests, AcceptsPureEndAfterQueueDropRecovery) {
+  namespace protocol = platf::virtual_device_host::protocol;
+  std::vector<std::uint8_t> queued_end(protocol::CONTROLLER_AUDIO_HEADER_SIZE);
+  queued_end[2] = protocol::CONTROLLER_AUDIO_STREAM_END;
+  queued_end[3] = 4;
+  queued_end[6] = 16;
+  protocol::write_u32(queued_end.data() + 8, 12);
+  protocol::write_u32(queued_end.data() + 20, 48'000);
+
+  EXPECT_TRUE(protocol::valid_controller_audio_payload(
+    queued_end.data(), queued_end.size()));
+  queued_end[2] |= protocol::CONTROLLER_AUDIO_DISCONTINUITY;
+  EXPECT_FALSE(protocol::valid_controller_audio_payload(
+    queued_end.data(), queued_end.size()));
+}
+
+TEST(Ds5ControllerAudioTests, SelectsOneStableRouteForClientCapabilities) {
+  using route = stream::ds5_audio::route_e;
+  EXPECT_EQ(stream::ds5_audio::select_route(true, true, false, false),
+            route::quad_controller_audio);
+  // A client advertising only 0x20 is still a quad-audio client while the
+  // session preference is enabled; disabling the next session must fall back
+  // without claiming unavailable 0x04 raw-haptics support.
+  EXPECT_EQ(stream::ds5_audio::select_route(false, true, false, false),
+            route::legacy_rumble);
+  EXPECT_EQ(stream::ds5_audio::select_route(false, true, true, false),
+            route::raw_haptics);
+  EXPECT_EQ(stream::ds5_audio::select_route(false, true, false, true),
+            route::authored_ir);
 }
 
 TEST(Ds5SidecarClientTests, EnvironmentScopeRestoresPreviousValues) {

@@ -371,8 +371,7 @@ namespace platf::ds5 {
           if (p.size() >= 24 && p[0] == owned_index) {
             const auto frames = read_u16(p.data() + 4);
             const auto pcm_size = static_cast<std::size_t>(frames) * 8;
-            if (p[3] == 4 && p[6] == 16 && read_u32(p.data() + 20) == 48000 &&
-                frames <= 240 && p.size() == 24 + pcm_size) {
+            if (virtual_device_host::protocol::valid_controller_audio_payload(p.data(), p.size())) {
               feedback_queue->raise(gamepad_feedback_msg_t::make_ds5_audio_pcm(
                 p[1], p[2], frames, read_u32(p.data() + 8), read_u64(p.data() + 12),
                 p.data() + 24, pcm_size));

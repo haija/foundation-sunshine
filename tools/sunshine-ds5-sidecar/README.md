@@ -39,6 +39,39 @@ four-channel stream: channels 1/2 contain game-authored controller-speaker
 audio and channels 3/4 contain the native actuator signal. The sidecar also
 emits the legacy stereo haptics message so older cores and clients retain
 native haptics.
+
+Sunshine forwards the quad stream only when the client negotiates feature bit
+`0x20` and `ds5_controller_audio` is enabled in `ds5_config.json` (the default).
+Setting it to `false` is a per-session compatibility preference. The saved value
+takes effect when the next stream starts, so an active stream never changes wire
+formats without matching START/END boundaries. The next stream omits
+controller-speaker audio and sends authored actuator samples through the best
+negotiated fallback (`0x550A`, authored IR, or legacy rumble). Configurations
+created before this option existed keep the enabled default. The
+controller-audio path is output-only; it does not carry a
+headset or microphone uplink.
+
+At the current 144-frame packet size, one active controller produces about
+333 controller-audio packets per second. The four-channel S16LE payload is
+384,000 bytes/s; the 28-byte encrypted-control wire header adds about 9,333
+bytes/s before transport encryption overhead. Sunshine keeps the maximum
+1,920-byte PCM block out of the global feedback union and uses one combined
+reference-counted allocation per accepted packet. The default remains enabled
+because negotiation gates delivery to clients that explicitly advertise the
+feature, while the toggle provides an actuator-only fallback on the next stream.
+
+The encrypted, unreliable `0x550D` payload uses a 28-byte v1 wire header followed
+by no more than 240 frames of 48 kHz S16LE samples in speaker-left,
+speaker-right, actuator-left, actuator-right order. Flags are START (`1`), END
+(`2`), and DISCONTINUITY (`4`); unknown flags and non-zero reserved bytes are
+rejected. The sidecar emits 144-frame packets (3 ms at 48 kHz). The encrypted
+packet is 1,204 bytes: within ENet's maximum but above its 900-byte default MTU,
+so Sunshine explicitly requests unreliable fragmentation rather than allowing
+ENet to promote fragments to reliable delivery. A bounded-queue drop marks the
+next packet as discontinuous.
+
+The bundled DualSense profile JSON files are adapted from HIDMaestro profiles.
+See `HIDMAESTRO-LICENSE.txt` for the required MIT attribution.
 HID-only attaches actually serve the derived `dualsense-hidonly` profile:
 its top-level collection usage is Joystick (0x04) instead of Game Pad
 (0x05), because the root-enumerated device never gets the native DualSense

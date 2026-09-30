@@ -3,13 +3,85 @@ using System.Threading.Channels;
 
 namespace Sunshine.Ds5Sidecar;
 
+internal sealed class RealtimeMessageQueue
+{
+    private readonly Channel<Protocol.Message> _channel;
+    private readonly object _writeSync = new();
+    private readonly HashSet<(Protocol.MessageType Type, byte Device, byte Controller)>
+        _pendingDiscontinuities = new();
+
+    internal RealtimeMessageQueue(int capacity = 32)
+    {
+        _channel = Channel.CreateBounded<Protocol.Message>(new BoundedChannelOptions(capacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+    }
+
+    private static bool TryKey(Protocol.Message message,
+        out (Protocol.MessageType Type, byte Device, byte Controller) key)
+    {
+        if ((message.Type is Protocol.MessageType.HapticsPcm or Protocol.MessageType.ControllerAudioPcm) &&
+            message.Payload.Length >= 3)
+        {
+            key = (message.Type, message.Payload[0], message.Payload[1]);
+            return true;
+        }
+        key = default;
+        return false;
+    }
+
+    private static bool IsPureControllerAudioEnd(Protocol.Message message) =>
+        message.Type == Protocol.MessageType.ControllerAudioPcm &&
+        message.Payload.Length == 24 &&
+        message.Payload[2] == (byte)Protocol.HapticsFlags.StreamEnd &&
+        message.Payload[4] == 0 && message.Payload[5] == 0;
+
+    internal bool TryWrite(Protocol.Message message)
+    {
+        var hasKey = TryKey(message, out var key);
+        lock (_writeSync)
+        {
+            var recoveryPending = hasKey && _pendingDiscontinuities.Contains(key);
+            // A zero-frame END is a stream boundary and the host contract requires
+            // its flags to remain exactly STREAM_END. It consumes a pending drop
+            // marker only after the END itself has been queued successfully.
+            var terminalEnd = recoveryPending && IsPureControllerAudioEnd(message);
+            var marksRecovery = recoveryPending && !terminalEnd;
+            if (marksRecovery)
+            {
+                // Message payloads are also visible to their producer. Copy only
+                // on the recovery path so inserting a queue-owned flag never
+                // mutates producer-owned state.
+                var payload = (byte[])message.Payload.Clone();
+                payload[2] |= (byte)Protocol.HapticsFlags.Discontinuity;
+                message = new Protocol.Message(message.Type, message.RequestId, payload);
+            }
+            if (_channel.Writer.TryWrite(message))
+            {
+                if (marksRecovery || terminalEnd)
+                    _pendingDiscontinuities.Remove(key);
+                return true;
+            }
+            if (hasKey)
+                _pendingDiscontinuities.Add(key);
+            return false;
+        }
+    }
+
+    internal bool TryRead(out Protocol.Message message) => _channel.Reader.TryRead(out message);
+    internal void Complete() => _channel.Writer.TryComplete();
+}
+
 internal sealed class VirtualDeviceHostServer : IAsyncDisposable
 {
     private readonly string _pipeName;
     private readonly bool _skipOwnerVerificationForTests;
     private readonly DeviceRegistry _devices;
     private readonly Channel<Protocol.Message> _controlOutgoing;
-    private readonly Channel<Protocol.Message> _realtimeOutgoing;
+    private readonly RealtimeMessageQueue _realtimeOutgoing;
     private readonly SemaphoreSlim _outgoingSignal = new(0, 1);
     private NamedPipeServerStream? _pipe;
     private CancellationTokenSource? _sessionCancellation;
@@ -25,12 +97,7 @@ internal sealed class VirtualDeviceHostServer : IAsyncDisposable
             SingleReader = true,
             SingleWriter = false,
         });
-        _realtimeOutgoing = Channel.CreateBounded<Protocol.Message>(new BoundedChannelOptions(32)
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropOldest,
-        });
+        _realtimeOutgoing = new RealtimeMessageQueue();
         _devices = new DeviceRegistry(Emit, enableCompositeMicrophonePrototype);
     }
 
@@ -81,7 +148,7 @@ internal sealed class VirtualDeviceHostServer : IAsyncDisposable
                 {
                     linked.Cancel();
                     _controlOutgoing.Writer.TryComplete();
-                    _realtimeOutgoing.Writer.TryComplete();
+                    _realtimeOutgoing.Complete();
                     try
                     {
                         await writer;
@@ -192,7 +259,7 @@ internal sealed class VirtualDeviceHostServer : IAsyncDisposable
     {
         var written = message.Type is Protocol.MessageType.HapticsPcm or
                                       Protocol.MessageType.ControllerAudioPcm
-            ? _realtimeOutgoing.Writer.TryWrite(message)
+            ? _realtimeOutgoing.TryWrite(message)
             : _controlOutgoing.Writer.TryWrite(message);
         if (written)
         {
@@ -221,7 +288,7 @@ internal sealed class VirtualDeviceHostServer : IAsyncDisposable
                 {
                     // Reliable request replies always take priority over feedback.
                 }
-                else if (_realtimeOutgoing.Reader.TryRead(out message))
+                else if (_realtimeOutgoing.TryRead(out message))
                 {
                     // High-rate audio/feedback is bounded and may be superseded.
                 }

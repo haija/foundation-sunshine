@@ -171,14 +171,18 @@ namespace ds5_config {
       }
 
       const auto input = nlohmann::json::parse(contents);
-      if (!input.is_object() || (input.size() != 5 && input.size() != 6) ||
+      const bool has_controller_audio = input.is_object() && input.contains("ds5_controller_audio");
+      const bool has_retired_enabled = input.is_object() && input.contains("ds5_enabled");
+      const auto expected_size = 5u + static_cast<unsigned>(has_controller_audio) +
+                                 static_cast<unsigned>(has_retired_enabled);
+      if (!input.is_object() || input.size() != expected_size ||
           !input.contains("ds5_audio_haptics") || !input["ds5_audio_haptics"].is_boolean() ||
           !input.contains("ds5_legacy_haptics_strength") || !input["ds5_legacy_haptics_strength"].is_number() ||
           !input.contains("ds5_legacy_haptics_curve") || !input["ds5_legacy_haptics_curve"].is_number() ||
           !input.contains("ds5_legacy_haptics_noise_gate") || !input["ds5_legacy_haptics_noise_gate"].is_number() ||
           !input.contains("ds5_genshin_compatibility") || !input["ds5_genshin_compatibility"].is_boolean() ||
-          (input.size() == 6 &&
-           (!input.contains("ds5_enabled") || !input["ds5_enabled"].is_boolean()))) {
+          (has_controller_audio && !input["ds5_controller_audio"].is_boolean()) ||
+          (has_retired_enabled && !input["ds5_enabled"].is_boolean())) {
         return {load_status_t::INVALID, {}};
       }
 
@@ -188,6 +192,7 @@ namespace ds5_config {
         input["ds5_legacy_haptics_curve"].get<double>(),
         input["ds5_legacy_haptics_noise_gate"].get<double>(),
         input["ds5_genshin_compatibility"].get<bool>(),
+        input.value("ds5_controller_audio", true),
       };
       return validate(settings) ? load_result_t {load_status_t::LOADED, settings} :
                                   load_result_t {load_status_t::INVALID, {}};
@@ -212,6 +217,7 @@ namespace ds5_config {
         {"ds5_legacy_haptics_curve", settings.legacy_curve},
         {"ds5_legacy_haptics_noise_gate", settings.legacy_noise_gate},
         {"ds5_genshin_compatibility", settings.genshin_compatibility},
+        {"ds5_controller_audio", settings.controller_audio},
       };
       std::ofstream file(temporary_path, std::ios::binary | std::ios::trunc);
       if (!file.is_open()) return false;

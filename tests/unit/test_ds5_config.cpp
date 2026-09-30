@@ -65,6 +65,7 @@ namespace {
       {"ds5_legacy_haptics_curve", 0.5},
       {"ds5_legacy_haptics_noise_gate", 0.006},
       {"ds5_genshin_compatibility", false},
+      {"ds5_controller_audio", false},
     };
   }
 
@@ -73,7 +74,8 @@ namespace {
            left.legacy_strength == right.legacy_strength &&
            left.legacy_curve == right.legacy_curve &&
            left.legacy_noise_gate == right.legacy_noise_gate &&
-           left.genshin_compatibility == right.genshin_compatibility;
+           left.genshin_compatibility == right.genshin_compatibility &&
+           left.controller_audio == right.controller_audio;
   }
 }  // namespace
 
@@ -93,6 +95,7 @@ TEST_F(Ds5ConfigTest, MissingFileReturnsDefaults) {
   EXPECT_DOUBLE_EQ(result.settings.legacy_curve, 0.5);
   EXPECT_DOUBLE_EQ(result.settings.legacy_noise_gate, 0.020);
   EXPECT_FALSE(result.settings.genshin_compatibility);
+  EXPECT_TRUE(result.settings.controller_audio);
   EXPECT_EQ(result.settings.revision, 1);
 }
 
@@ -128,13 +131,24 @@ TEST_F(Ds5ConfigTest, IgnoresRetiredEnabledFieldAndDropsItOnSave) {
 
   const auto saved = nlohmann::json::parse(read_text(path_));
   EXPECT_FALSE(saved.contains("ds5_enabled"));
-  EXPECT_EQ(saved.size(), 5);
+  EXPECT_EQ(saved.size(), 6);
+}
+
+TEST_F(Ds5ConfigTest, LoadsLegacyConfigWithControllerAudioEnabled) {
+  auto input = valid_json();
+  input.erase("ds5_controller_audio");
+  write_json(input);
+
+  const auto loaded = ds5_config::load(path_);
+  ASSERT_EQ(loaded.status, ds5_config::load_status_t::LOADED);
+  EXPECT_TRUE(loaded.settings.controller_audio);
 }
 
 TEST_F(Ds5ConfigTest, SavesBacksUpAndReloadsCompleteSettings) {
   const ds5_config::settings_t previous {true, 1.2, 0.8, 0.010};
   auto replacement = ds5_config::settings_t {true, 2.0, 0.5, 0.006};
   replacement.genshin_compatibility = true;
+  replacement.controller_audio = false;
   replacement.revision = 9;
 
   ASSERT_TRUE(ds5_config::save(path_, previous));
@@ -149,6 +163,7 @@ TEST_F(Ds5ConfigTest, SavesBacksUpAndReloadsCompleteSettings) {
   EXPECT_DOUBLE_EQ(loaded.settings.legacy_curve, replacement.legacy_curve);
   EXPECT_DOUBLE_EQ(loaded.settings.legacy_noise_gate, replacement.legacy_noise_gate);
   EXPECT_TRUE(loaded.settings.genshin_compatibility);
+  EXPECT_FALSE(loaded.settings.controller_audio);
   // Revision describes only the current process and is not persisted.
   EXPECT_EQ(loaded.settings.revision, 1);
 }

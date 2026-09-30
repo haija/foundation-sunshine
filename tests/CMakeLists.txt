@@ -482,6 +482,7 @@ if (WIN32)
             ${CMAKE_SOURCE_DIR}/src/platform/windows/ds5/ds5_sidecar_client.cpp)
     target_include_directories(ds5_sidecar_client_unit_tests PRIVATE "${CMAKE_SOURCE_DIR}")
     target_link_libraries(ds5_sidecar_client_unit_tests
+            Boost::asio
             Boost::log
             Boost::format
             Boost::property_tree

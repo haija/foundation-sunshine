@@ -17,7 +17,7 @@
 [submodule "third-party/moonlight-common-c"]
 	path = third-party/moonlight-common-c
 	url = https://github.com/haija/moonlight-common-c.git
-	branch = mic
+	branch = polish/optional-speaker-negotiation
 [submodule "third-party/nanors"]
 	path = third-party/nanors
 	url = https://github.com/sleepybishop/nanors.git
@@ -80,7 +80,7 @@
 [submodule "src_assets/common/sunshine-control-panel"]
 	path = src_assets/common/sunshine-control-panel
 	url = https://github.com/haija/sunshine-control-panel.git
-	branch = main
+	branch = codex/controller-speaker-toggle
 [submodule "third-party/moonlight-audio-haptics"]
 	path = third-party/moonlight-audio-haptics
 	url = https://github.com/AlkaidLab/moonlight-audio-haptics.git

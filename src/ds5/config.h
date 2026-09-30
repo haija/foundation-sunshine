@@ -24,6 +24,7 @@ namespace ds5_config {
     double legacy_curve = 0.5;
     double legacy_noise_gate = 0.020;
     bool genshin_compatibility = false;
+    bool controller_audio = true;
     std::uint64_t revision = 1;
   };
 

@@ -44,6 +44,7 @@ extern "C" {
 #include "config.h"
 #include "display_device/display_device.h"
 #include "display_device/session.h"
+#include "ds5/config.h"
 #include "globals.h"
 #include "haptics/authored_ir.h"
 #include "rtsp.h"
@@ -492,7 +493,11 @@ namespace stream {
 
     int
     send_unreliable(const std::string_view &payload, net::peer_t peer) {
-      auto packet = enet_packet_create(payload.data(), payload.size(), 0);
+      // Controller audio can exceed a peer's negotiated MTU. Without this flag,
+      // ENet silently promotes fragmented packets to reliable delivery, which is
+      // inappropriate for realtime PCM and defeats the 0x550D contract.
+      auto packet = enet_packet_create(
+        payload.data(), payload.size(), ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
       if (enet_peer_send(peer, 0, packet)) {
         enet_packet_destroy(packet);
         return -1;
@@ -579,6 +584,10 @@ namespace stream {
 
   struct session_t {
     config_t config;
+    // Controller-audio routing is fixed for the lifetime of a stream. A UI
+    // preference update is applied when the next session is allocated, avoiding
+    // mid-stream quad/stereo duplication and missing START/END transitions.
+    bool controller_audio_enabled { true };
 
     safe::mail_t mail;
 
@@ -1462,48 +1471,38 @@ namespace stream {
       payload = encode_control(session, util::view(plaintext), encrypted_payload);
     }
     else if (msg.type == platf::gamepad_feedback_e::ds5_audio_pcm) {
-      if ((session->config.mlFeatureFlags & ML_FF_DS5_AUDIO_PCM) == 0) {
+      const auto route = ds5_audio::select_route(
+        session->controller_audio_enabled,
+        (session->config.mlFeatureFlags & ML_FF_DS5_AUDIO_PCM) != 0,
+        (session->config.mlFeatureFlags & ML_FF_DS5_HAPTICS_PCM) != 0,
+        (session->config.mlFeatureFlags & ML_FF_DS5_HAPTICS_IR_V2) != 0);
+      if (route != ds5_audio::route_e::quad_controller_audio) {
         return 0;
       }
 
       const auto &data = msg.data.ds5_audio;
       const auto pcm_size = static_cast<std::size_t>(data.frame_count) * 8;
-      constexpr std::size_t wire_header_size = 28;
-      std::vector<std::uint8_t> plaintext(sizeof(control_header_v2) + wire_header_size + pcm_size);
+      const auto *pcm = msg.dynamic_pcm ? msg.dynamic_pcm->data() : nullptr;
+      const auto wire = ds5_audio::encode_wire(
+        msg.id, data.flags, data.frame_count, data.sequence,
+        data.presentation_time_us, pcm, pcm_size);
+      if (wire.empty()) {
+        BOOST_LOG(warning) << "Dropping malformed DualSense controller audio feedback"sv;
+        return 0;
+      }
+      std::vector<std::uint8_t> plaintext(sizeof(control_header_v2) + wire.size());
       auto write_u16 = [](std::uint8_t *p, std::uint16_t v) {
         p[0] = static_cast<std::uint8_t>(v);
         p[1] = static_cast<std::uint8_t>(v >> 8);
       };
-      auto write_u32 = [](std::uint8_t *p, std::uint32_t v) {
-        p[0] = static_cast<std::uint8_t>(v);
-        p[1] = static_cast<std::uint8_t>(v >> 8);
-        p[2] = static_cast<std::uint8_t>(v >> 16);
-        p[3] = static_cast<std::uint8_t>(v >> 24);
-      };
-      auto write_u64 = [&write_u32](std::uint8_t *p, std::uint64_t v) {
-        write_u32(p, static_cast<std::uint32_t>(v));
-        write_u32(p + 4, static_cast<std::uint32_t>(v >> 32));
-      };
 
       auto *control = plaintext.data();
       write_u16(control, packetTypes[IDX_DS5_AUDIO_PCM]);
-      write_u16(control + 2, static_cast<std::uint16_t>(wire_header_size + pcm_size));
-      auto *wire = control + sizeof(control_header_v2);
-      wire[0] = 1;
-      wire[1] = data.flags;
-      write_u16(wire + 2, wire_header_size);
-      write_u16(wire + 4, msg.id);
-      write_u16(wire + 6, data.frame_count);
-      write_u32(wire + 8, data.sequence);
-      write_u64(wire + 12, data.presentation_time_us);
-      write_u32(wire + 20, 48000);
-      wire[24] = 4;
-      wire[25] = 16;
-      wire[26] = wire[27] = 0;
-      std::copy_n(data.pcm.begin(), pcm_size, wire + wire_header_size);
+      write_u16(control + 2, static_cast<std::uint16_t>(wire.size()));
+      std::copy(wire.begin(), wire.end(), control + sizeof(control_header_v2));
 
       std::array<std::uint8_t,
-        sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(control_header_v2) + wire_header_size + 240 * 8) + crypto::cipher::tag_size>
+        sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(control_header_v2) + ds5_audio::WIRE_HEADER_SIZE + ds5_audio::MAX_FRAMES * ds5_audio::BYTES_PER_FRAME) + crypto::cipher::tag_size>
         encrypted_payload;
       payload = encode_control(session,
         std::string_view(reinterpret_cast<const char *>(plaintext.data()), plaintext.size()),
@@ -1513,7 +1512,12 @@ namespace stream {
     else if (msg.type == platf::gamepad_feedback_e::ds5_haptics_pcm) {
       // A quad-audio client receives the same actuator samples in channels
       // 3/4 of 0x550D, so do not duplicate them in a second feedback stream.
-      if ((session->config.mlFeatureFlags & ML_FF_DS5_AUDIO_PCM) != 0) {
+      if (ds5_audio::select_route(
+            session->controller_audio_enabled,
+            (session->config.mlFeatureFlags & ML_FF_DS5_AUDIO_PCM) != 0,
+            (session->config.mlFeatureFlags & ML_FF_DS5_HAPTICS_PCM) != 0,
+            (session->config.mlFeatureFlags & ML_FF_DS5_HAPTICS_IR_V2) != 0) ==
+          ds5_audio::route_e::quad_controller_audio) {
         return 0;
       }
       const bool sends_raw_pcm = (session->config.mlFeatureFlags & ML_FF_DS5_HAPTICS_PCM) != 0;
@@ -4546,6 +4550,7 @@ namespace stream {
       session->hdr_target_source = launch_session.hdr_target_source;
 
       session->config = config;
+      session->controller_audio_enabled = ds5_config::current().controller_audio;
 
       // Initialize current total bitrate (including FEC) from config
       // config.monitor.bitrate is the encoding bitrate (excluding FEC)

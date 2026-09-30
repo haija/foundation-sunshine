@@ -29,5 +29,6 @@
     <EmbeddedResource Include="profiles\dualsense.json" LogicalName="Sunshine.Ds5Sidecar.profiles.dualsense.json" />
     <EmbeddedResource Include="profiles\dualsense-composite.json" LogicalName="Sunshine.Ds5Sidecar.profiles.dualsense-composite.json" />
     <EmbeddedResource Include="profiles\dualsense-hidonly.json" LogicalName="Sunshine.Ds5Sidecar.profiles.dualsense-hidonly.json" />
+    <None Include="HIDMAESTRO-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -423,6 +423,8 @@ internal static class ProtocolSelfTest
         VerifySensorTimestampEncoding();
         VerifyOutputValidityFlags();
         VerifyOutputValidityGating();
+        VerifyControllerAudioProtocol();
+        VerifyRealtimeQueueDiscontinuity();
     }
 
     private static void VerifyHidMaestroMicrophoneContract()
@@ -538,6 +540,122 @@ internal static class ProtocolSelfTest
                 BinaryPrimitives.ReadUInt32LittleEndian(status.AsSpan(8, 4)) == 1_920 &&
                 BinaryPrimitives.ReadInt32LittleEndian(status.AsSpan(24, 4)) == -7,
             "microphone status ABI");
+    }
+
+    private static Protocol.Message ControllerAudioMessage(uint sequence, byte flags = 0)
+    {
+        const ushort frames = 2;
+        var payload = new byte[24 + frames * 8];
+        payload[0] = 3;
+        payload[1] = 1;
+        payload[2] = flags;
+        payload[3] = 4;
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(4, 2), frames);
+        payload[6] = 16;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), sequence);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(12, 8), 0x0102030405060708);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(20, 4), 48_000);
+        return new Protocol.Message(Protocol.MessageType.ControllerAudioPcm, 0, payload);
+    }
+
+    private static Protocol.Message ControllerAudioEndMessage(uint sequence)
+    {
+        var payload = new byte[24];
+        payload[0] = 3;
+        payload[1] = 1;
+        payload[2] = (byte)Protocol.HapticsFlags.StreamEnd;
+        payload[3] = 4;
+        payload[6] = 16;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), sequence);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(20, 4), 48_000);
+        return new Protocol.Message(Protocol.MessageType.ControllerAudioPcm, 0, payload);
+    }
+
+    private static void VerifyControllerAudioProtocol()
+    {
+        var message = ControllerAudioMessage(0x11223344, (byte)Protocol.HapticsFlags.StreamStart);
+        var frame = Protocol.Encode(message);
+        Require(frame.Length == Protocol.HeaderSize + message.Payload.Length,
+            "controller audio exact frame length");
+        Require(message.Payload[3] == 4 && message.Payload[6] == 16 &&
+                BinaryPrimitives.ReadUInt16LittleEndian(message.Payload.AsSpan(4, 2)) == 2 &&
+                BinaryPrimitives.ReadUInt32LittleEndian(message.Payload.AsSpan(20, 4)) == 48_000,
+            "controller audio 48 kHz S16LE quad format");
+        Require(message.Payload.Length <= 24 + 144 * 8,
+            "controller audio packet remains within the 144-frame producer budget");
+    }
+
+    private static void VerifyRealtimeQueueDiscontinuity()
+    {
+        var queue = new RealtimeMessageQueue(1);
+        Require(queue.TryWrite(ControllerAudioMessage(1)), "first realtime packet queued");
+        Require(!queue.TryWrite(ControllerAudioMessage(2)), "full realtime queue drops newest packet");
+        Require(queue.TryRead(out var first) && first.Payload[2] == 0,
+            "first realtime packet remains intact");
+        var producerOwned = ControllerAudioMessage(3);
+        Require(queue.TryWrite(producerOwned), "post-drop realtime packet queued");
+        Require(producerOwned.Payload[2] == 0,
+            "queue discontinuity insertion does not mutate producer payload");
+        Require(queue.TryRead(out var resumed) &&
+                (resumed.Payload[2] & (byte)Protocol.HapticsFlags.Discontinuity) != 0,
+            "post-drop realtime packet carries discontinuity");
+
+        var endQueue = new RealtimeMessageQueue(1);
+        Require(endQueue.TryWrite(ControllerAudioMessage(10)),
+            "drop-to-end queue primed");
+        Require(!endQueue.TryWrite(ControllerAudioMessage(11)),
+            "drop-to-end overflow recorded");
+        Require(endQueue.TryRead(out _), "drop-to-end queue slot released");
+        var producerEnd = ControllerAudioEndMessage(12);
+        Require(endQueue.TryWrite(producerEnd), "zero-frame END queued after drop");
+        Require(producerEnd.Payload[2] == (byte)Protocol.HapticsFlags.StreamEnd,
+            "queue does not mutate producer-owned zero-frame END");
+        Require(endQueue.TryRead(out var queuedEnd) &&
+                queuedEnd.Payload.Length == 24 &&
+                queuedEnd.Payload[2] == (byte)Protocol.HapticsFlags.StreamEnd &&
+                BinaryPrimitives.ReadUInt16LittleEndian(queuedEnd.Payload.AsSpan(4, 2)) == 0,
+            "drop recovery preserves host-valid pure zero-frame END");
+        Require(endQueue.TryWrite(ControllerAudioMessage(13)) &&
+                endQueue.TryRead(out var afterEnd) &&
+                afterEnd.Payload[2] == 0,
+            "successfully queued END clears pending discontinuity");
+
+        var failedEndQueue = new RealtimeMessageQueue(1);
+        Require(failedEndQueue.TryWrite(ControllerAudioMessage(20)),
+            "failed-END queue primed");
+        Require(!failedEndQueue.TryWrite(ControllerAudioMessage(21)),
+            "failed-END overflow recorded");
+        Require(!failedEndQueue.TryWrite(ControllerAudioEndMessage(22)),
+            "full queue rejects zero-frame END");
+        Require(failedEndQueue.TryRead(out _), "failed-END queue slot released");
+        Require(failedEndQueue.TryWrite(ControllerAudioMessage(23)) &&
+                failedEndQueue.TryRead(out var recoveredAfterFailedEnd) &&
+                (recoveredAfterFailedEnd.Payload[2] &
+                 (byte)Protocol.HapticsFlags.Discontinuity) != 0,
+            "failed END enqueue retains pending discontinuity");
+
+        // After another overflow, race many producers for the single free slot.
+        // Exactly one message can win, and the winner must retain the pending
+        // discontinuity rather than allowing an unmarked concurrent writer past.
+        Require(queue.TryWrite(ControllerAudioMessage(4)), "concurrency queue primed");
+        Require(!queue.TryWrite(ControllerAudioMessage(5)), "concurrency drop recorded");
+        Require(queue.TryRead(out _), "concurrency queue slot released");
+        using var start = new ManualResetEventSlim(false);
+        var attempts = Enumerable.Range(0, 32).Select(index => Task.Run(() =>
+        {
+            start.Wait();
+            var candidate = ControllerAudioMessage((uint)(100 + index));
+            return (Accepted: queue.TryWrite(candidate), ProducerFlags: candidate.Payload[2]);
+        })).ToArray();
+        start.Set();
+        Task.WaitAll(attempts);
+        Require(attempts.Count(task => task.Result.Accepted) == 1,
+            "one concurrent realtime writer wins bounded slot");
+        Require(attempts.All(task => task.Result.ProducerFlags == 0),
+            "concurrent queue recovery never mutates producer payloads");
+        Require(queue.TryRead(out var concurrentWinner) &&
+                (concurrentWinner.Payload[2] & (byte)Protocol.HapticsFlags.Discontinuity) != 0,
+            "concurrent realtime winner retains discontinuity");
     }
 
     private static void VerifyMicrophonePcmQueue()

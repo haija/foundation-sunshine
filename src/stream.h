@@ -3,6 +3,8 @@
  * @brief Declarations for the streaming protocols.
  */
 #pragma once
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -27,6 +29,76 @@ namespace stream {
   constexpr auto CONTROL_PORT = 10;
   constexpr auto AUDIO_STREAM_PORT = 11;
   constexpr auto MIC_STREAM_PORT = 12;  // Port for microphone streaming
+
+  namespace ds5_audio {
+    inline constexpr std::uint8_t STREAM_START = 1u << 0;
+    inline constexpr std::uint8_t STREAM_END = 1u << 1;
+    inline constexpr std::uint8_t DISCONTINUITY = 1u << 2;
+    inline constexpr std::uint8_t ALLOWED_FLAGS = STREAM_START | STREAM_END | DISCONTINUITY;
+    inline constexpr std::uint16_t MAX_FRAMES = 240;
+    inline constexpr std::size_t BYTES_PER_FRAME = 8;
+    inline constexpr std::size_t WIRE_HEADER_SIZE = 28;
+
+    enum class route_e {
+      quad_controller_audio,
+      raw_haptics,
+      authored_ir,
+      legacy_rumble,
+    };
+
+    constexpr route_e
+    select_route(bool controller_audio_preference, bool quad_supported,
+                 bool raw_haptics_supported, bool authored_ir_supported) noexcept {
+      if (controller_audio_preference && quad_supported) return route_e::quad_controller_audio;
+      if (raw_haptics_supported) return route_e::raw_haptics;
+      if (authored_ir_supported) return route_e::authored_ir;
+      return route_e::legacy_rumble;
+    }
+
+    constexpr bool
+    valid_packet(std::uint8_t flags, std::uint16_t frame_count,
+                 const std::uint8_t *pcm, std::size_t pcm_size) noexcept {
+      if ((flags & ~ALLOWED_FLAGS) != 0 || frame_count > MAX_FRAMES) return false;
+      if (frame_count == 0) return flags == STREAM_END && pcm_size == 0;
+      return pcm != nullptr && pcm_size == static_cast<std::size_t>(frame_count) * BYTES_PER_FRAME;
+    }
+
+    inline std::vector<std::uint8_t>
+    encode_wire(std::uint16_t controller_id, std::uint8_t flags,
+                std::uint16_t frame_count, std::uint32_t sequence,
+                std::uint64_t presentation_time_us, const std::uint8_t *pcm,
+                std::size_t pcm_size) {
+      if (!valid_packet(flags, frame_count, pcm, pcm_size)) return {};
+      std::vector<std::uint8_t> wire(WIRE_HEADER_SIZE + pcm_size);
+      auto write_u16 = [](std::uint8_t *p, std::uint16_t v) {
+        p[0] = static_cast<std::uint8_t>(v);
+        p[1] = static_cast<std::uint8_t>(v >> 8);
+      };
+      auto write_u32 = [](std::uint8_t *p, std::uint32_t v) {
+        p[0] = static_cast<std::uint8_t>(v);
+        p[1] = static_cast<std::uint8_t>(v >> 8);
+        p[2] = static_cast<std::uint8_t>(v >> 16);
+        p[3] = static_cast<std::uint8_t>(v >> 24);
+      };
+      auto write_u64 = [&write_u32](std::uint8_t *p, std::uint64_t v) {
+        write_u32(p, static_cast<std::uint32_t>(v));
+        write_u32(p + 4, static_cast<std::uint32_t>(v >> 32));
+      };
+      wire[0] = 1;
+      wire[1] = flags;
+      write_u16(wire.data() + 2, WIRE_HEADER_SIZE);
+      write_u16(wire.data() + 4, controller_id);
+      write_u16(wire.data() + 6, frame_count);
+      write_u32(wire.data() + 8, sequence);
+      write_u64(wire.data() + 12, presentation_time_us);
+      write_u32(wire.data() + 20, 48'000);
+      wire[24] = 4;
+      wire[25] = 16;
+      wire[26] = wire[27] = 0;
+      if (pcm_size != 0) std::copy_n(pcm, pcm_size, wire.data() + WIRE_HEADER_SIZE);
+      return wire;
+    }
+  }  // namespace ds5_audio
 
   /**
    * @brief Convert a steady-clock presentation time to the 90 kHz RTP video clock.

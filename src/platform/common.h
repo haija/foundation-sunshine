@@ -11,10 +11,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // lib includes
 #include <boost/core/noncopyable.hpp>
@@ -184,7 +186,9 @@ namespace platf {
       msg.data.ds5_audio.sequence = sequence;
       msg.data.ds5_audio.presentation_time_us = presentation_time_us;
       const auto expected_size = static_cast<std::size_t>(msg.data.ds5_audio.frame_count) * 8;
-      std::copy_n(pcm, std::min(expected_size, pcm_size), msg.data.ds5_audio.pcm.begin());
+      auto payload = std::make_shared<std::array<std::uint8_t, 240 * 8>>();
+      std::copy_n(pcm, std::min(expected_size, pcm_size), payload->begin());
+      msg.dynamic_pcm = std::move(payload);
       return msg;
     }
 
@@ -235,10 +239,18 @@ namespace platf {
         std::uint16_t frame_count;
         std::uint32_t sequence;
         std::uint64_t presentation_time_us;
-        std::array<std::uint8_t, 240 * 4 * sizeof(std::int16_t)> pcm;
       } ds5_audio;
     } data;
+
+    // Quad controller audio is the largest feedback payload and is produced
+    // only for an active composite DualSense. Keep it out of the union so
+    // rumble, LED, motion, and ordinary controller queues do not all double in
+    // size from 960 to 1920 bytes.
+    std::shared_ptr<const std::array<std::uint8_t, 240 * 8>> dynamic_pcm;
   };
+
+  static_assert(sizeof(gamepad_feedback_msg_t) <= 1024,
+    "gamepad feedback messages must keep large PCM buffers out of line");
 
   using feedback_queue_t = safe::mail_raw_t::queue_t<gamepad_feedback_msg_t>;
 

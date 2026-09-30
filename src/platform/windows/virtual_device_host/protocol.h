@@ -39,6 +39,14 @@ namespace platf::virtual_device_host::protocol {
   inline constexpr std::size_t MIC_OPERATION_REPLY_PAYLOAD_SIZE = 8;
   inline constexpr std::size_t MIC_PCM_HEADER_SIZE = 20;
   inline constexpr std::size_t MIC_STATUS_PAYLOAD_SIZE = 28;
+  inline constexpr std::size_t CONTROLLER_AUDIO_HEADER_SIZE = 24;
+  inline constexpr std::uint16_t MAX_CONTROLLER_AUDIO_FRAMES = 240;
+  inline constexpr std::uint8_t CONTROLLER_AUDIO_STREAM_START = 1u << 0;
+  inline constexpr std::uint8_t CONTROLLER_AUDIO_STREAM_END = 1u << 1;
+  inline constexpr std::uint8_t CONTROLLER_AUDIO_DISCONTINUITY = 1u << 2;
+  inline constexpr std::uint8_t CONTROLLER_AUDIO_ALLOWED_FLAGS =
+    CONTROLLER_AUDIO_STREAM_START | CONTROLLER_AUDIO_STREAM_END |
+    CONTROLLER_AUDIO_DISCONTINUITY;
 
   enum class message_e : std::uint16_t {
     hello = 1,
@@ -96,6 +104,34 @@ namespace platf::virtual_device_host::protocol {
     destination[1] = static_cast<std::uint8_t>(value >> 8);
     destination[2] = static_cast<std::uint8_t>(value >> 16);
     destination[3] = static_cast<std::uint8_t>(value >> 24);
+  }
+
+  constexpr std::uint16_t read_u16(const std::uint8_t *source) {
+    return static_cast<std::uint16_t>(source[0]) |
+           static_cast<std::uint16_t>(source[1] << 8);
+  }
+
+  constexpr std::uint32_t read_u32(const std::uint8_t *source) {
+    return static_cast<std::uint32_t>(source[0]) |
+           (static_cast<std::uint32_t>(source[1]) << 8) |
+           (static_cast<std::uint32_t>(source[2]) << 16) |
+           (static_cast<std::uint32_t>(source[3]) << 24);
+  }
+
+  constexpr bool valid_controller_audio_payload(
+    const std::uint8_t *payload,
+    std::size_t payload_size) {
+    if (!payload || payload_size < CONTROLLER_AUDIO_HEADER_SIZE) return false;
+    const auto frames = read_u16(payload + 4);
+    const auto flags = payload[2];
+    return (flags & ~CONTROLLER_AUDIO_ALLOWED_FLAGS) == 0 &&
+           payload[3] == 4 && payload[6] == 16 && payload[7] == 0 &&
+           payload[20] == 0x80 && payload[21] == 0xbb &&
+           payload[22] == 0 && payload[23] == 0 &&
+           frames <= MAX_CONTROLLER_AUDIO_FRAMES &&
+           (frames != 0 || flags == CONTROLLER_AUDIO_STREAM_END) &&
+           payload_size == CONTROLLER_AUDIO_HEADER_SIZE +
+                             static_cast<std::size_t>(frames) * 8;
   }
 
   constexpr std::array<std::uint8_t, HEADER_SIZE> encode_header(
