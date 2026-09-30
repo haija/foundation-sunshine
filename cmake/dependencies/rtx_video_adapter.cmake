@@ -41,16 +41,33 @@ set(RTX_VIDEO_NGX_APPLICATION_ID "${_rtx_app_id}" CACHE STRING "NGX application 
 
 set(_rtx_source "${CMAKE_SOURCE_DIR}/src/platform/windows/image_enhancement/rtx_hdr/adapter")
 set(_rtx_build "${CMAKE_BINARY_DIR}/image_enhancement/nvidia_rtx_video_adapter")
-set(RTX_VIDEO_ADAPTER_PREBUILT "" CACHE FILEPATH "Trusted RTX Video adapter from an existing Foundation Sunshine release")
+set(RTX_VIDEO_ADAPTER_PREBUILT "" CACHE FILEPATH "Explicitly supplied RTX Video adapter; provenance and licensing require separate verification")
+set(RTX_VIDEO_ADAPTER_EXPECTED_SHA256 "" CACHE STRING "Independently verified SHA256 of the supplied adapter")
+set(RTX_VIDEO_RUNTIME_EXPECTED_SHA256 "" CACHE STRING "Independently verified SHA256 of the supplied NVIDIA runtime")
 if (RTX_VIDEO_ADAPTER_PREBUILT)
     if (NOT EXISTS "${RTX_VIDEO_ADAPTER_PREBUILT}" OR IS_DIRECTORY "${RTX_VIDEO_ADAPTER_PREBUILT}")
         message(FATAL_ERROR "Prebuilt RTX Video adapter is missing: ${RTX_VIDEO_ADAPTER_PREBUILT}")
     endif ()
+    foreach (_component IN ITEMS ADAPTER RUNTIME)
+        string(LENGTH "${RTX_VIDEO_${_component}_EXPECTED_SHA256}" _hash_length)
+        if (NOT _hash_length EQUAL 64 OR NOT RTX_VIDEO_${_component}_EXPECTED_SHA256 MATCHES "^[0-9a-fA-F]+$")
+            message(FATAL_ERROR "Prebuilt mode requires RTX_VIDEO_${_component}_EXPECTED_SHA256 from separately verified inputs")
+        endif ()
+    endforeach ()
     set(RTX_VIDEO_ADAPTER_DLL "${RTX_VIDEO_ADAPTER_PREBUILT}")
 else ()
     set(RTX_VIDEO_ADAPTER_DLL "${_rtx_build}/Release/foundation_rtx_video_adapter.dll")
 endif ()
 set(RTX_VIDEO_RUNTIME_DLL "${_rtx_sdk_root}/bin/Windows/x64/rel/nvngx_truehdr.dll")
+if (RTX_VIDEO_ADAPTER_PREBUILT)
+    foreach (_component IN ITEMS ADAPTER RUNTIME)
+        file(SHA256 "${RTX_VIDEO_${_component}_DLL}" _actual_hash)
+        string(TOLOWER "${RTX_VIDEO_${_component}_EXPECTED_SHA256}" _expected_hash)
+        if (NOT _actual_hash STREQUAL _expected_hash)
+            message(FATAL_ERROR "Supplied RTX Video ${_component} does not match the expected SHA256")
+        endif ()
+    endforeach ()
+endif ()
 set(RTX_VIDEO_TRUST_INCLUDE "${CMAKE_BINARY_DIR}/generated/rtx_video")
 set(RTX_VIDEO_TRUST_HEADER "${RTX_VIDEO_TRUST_INCLUDE}/rtx_video_trust.h")
 set(_rtx_adapter_sources
@@ -73,7 +90,7 @@ set(_rtx_previous "")
 if (EXISTS "${_rtx_build}/configure-inputs")
     file(READ "${_rtx_build}/configure-inputs" _rtx_previous)
 endif ()
-if (NOT _rtx_inputs STREQUAL _rtx_previous OR NOT EXISTS "${_rtx_build}/CMakeCache.txt")
+if (NOT RTX_VIDEO_ADAPTER_PREBUILT AND (NOT _rtx_inputs STREQUAL _rtx_previous OR NOT EXISTS "${_rtx_build}/CMakeCache.txt"))
     set(_rtx_configured "1")
     set(_rtx_configure_log "")
     foreach (_rtx_generator IN ITEMS "Visual Studio 18 2026" "Visual Studio 17 2022")
@@ -113,11 +130,13 @@ if (RTX_VIDEO_ADAPTER_PREBUILT)
         COMMAND "${CMAKE_COMMAND}"
             "-DADAPTER_PATH=${RTX_VIDEO_ADAPTER_DLL}"
             "-DRUNTIME_PATH=${RTX_VIDEO_RUNTIME_DLL}"
+            "-DEXPECTED_ADAPTER_SHA256=${RTX_VIDEO_ADAPTER_EXPECTED_SHA256}"
+            "-DEXPECTED_RUNTIME_SHA256=${RTX_VIDEO_RUNTIME_EXPECTED_SHA256}"
             "-DOUTPUT_PATH=${RTX_VIDEO_TRUST_HEADER}"
             -P "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
         DEPENDS "${RTX_VIDEO_ADAPTER_DLL}" "${RTX_VIDEO_RUNTIME_DLL}"
             "${CMAKE_CURRENT_LIST_DIR}/GenerateRtxVideoTrustHeader.cmake"
-        COMMENT "Fingerprinting the existing RTX Video adapter"
+        COMMENT "Checking supplied RTX Video inputs against explicit hashes"
         VERBATIM)
 else ()
     add_custom_command(

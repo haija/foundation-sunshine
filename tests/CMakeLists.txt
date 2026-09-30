@@ -33,6 +33,9 @@ add_executable(tray_state_unit_tests
         ${CMAKE_SOURCE_DIR}/tests/unit/test_http_util.cpp
         ${CMAKE_SOURCE_DIR}/tests/unit/test_tray_state.cpp)
 target_include_directories(tray_state_unit_tests PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_definitions(tray_state_unit_tests PRIVATE
+        SUNSHINE_TRAY=${SUNSHINE_TRAY}
+        SUNSHINE_GUI_TRAY=${SUNSHINE_GUI_TRAY})
 target_link_libraries(tray_state_unit_tests
         nlohmann_json::nlohmann_json
         gtest_main)
@@ -42,6 +45,18 @@ if (WIN32)
     set_target_properties(tray_state_unit_tests PROPERTIES LINK_SEARCH_START_STATIC 1)
 endif ()
 add_test(NAME tray_state_unit_tests COMMAND tray_state_unit_tests)
+
+add_executable(gamepad_auto_selection_unit_tests
+        ${CMAKE_SOURCE_DIR}/tests/unit/platform/windows/test_gamepad_auto_selection.cpp)
+target_include_directories(gamepad_auto_selection_unit_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/src")
+target_link_libraries(gamepad_auto_selection_unit_tests gtest_main)
+set_target_properties(gamepad_auto_selection_unit_tests PROPERTIES CXX_STANDARD 23)
+add_test(NAME gamepad_auto_selection_unit_tests COMMAND gamepad_auto_selection_unit_tests)
+add_test(NAME rtx_prebuilt_hashes COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/rtx-prebuilt-fixtures"
+        -P "${CMAKE_SOURCE_DIR}/tests/cmake/test_rtx_prebuilt_hashes.cmake")
 
 add_executable(sunshinesvc_state_unit_tests
         ${CMAKE_SOURCE_DIR}/tests/unit/test_sunshinesvc_state.cpp)

@@ -7,6 +7,20 @@
   },
   "configurePresets": [
     {
+      "name": "local-compat-release",
+      "inherits": "dev-win",
+      "displayName": "Local compatibility Release with RTX HDR and GUI tray",
+      "description": "Supply licensed RTX SDK/adapter paths and verified hashes explicitly. Does not install anything.",
+      "binaryDir": "${sourceDir}/build-local-compat-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SUNSHINE_RTX_HDR": "ON",
+        "SUNSHINE_ENABLE_TRAY": "ON",
+        "SUNSHINE_ENABLE_LEGACY_TRAY": "OFF",
+        "BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "dev-win",
       "displayName": "Windows Dev (Ninja + MSYS2)",
       "description": "Local Windows development build. Run inside MSYS2 UCRT64 shell.",

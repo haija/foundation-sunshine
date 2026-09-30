@@ -10,6 +10,14 @@ endif ()
 
 file(SHA256 "${ADAPTER_PATH}" ADAPTER_SHA256)
 file(SHA256 "${RUNTIME_PATH}" RUNTIME_SHA256)
+foreach (_component IN ITEMS ADAPTER RUNTIME)
+  if (DEFINED EXPECTED_${_component}_SHA256)
+    string(TOLOWER "${EXPECTED_${_component}_SHA256}" _expected)
+    if (NOT ${_component}_SHA256 STREQUAL _expected)
+      message(FATAL_ERROR "RTX Video ${_component} changed after configuration")
+    endif ()
+  endif ()
+endforeach ()
 set(_content
 "#pragma once
 #define SUNSHINE_RTX_VIDEO_ADAPTER_SHA256 \"${ADAPTER_SHA256}\"

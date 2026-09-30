@@ -603,10 +603,9 @@ ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
       gui_agent_last_error = ERROR_SUCCESS;
       gui_agent_retry_at_ms = 0;
       gui_agent_backoff.reset();
-      // Sunshine Codex is administered through its dedicated web shortcut.
-      // The upstream tray helper assumes the stock service/port identity and
-      // repeatedly polls an unconfigured first-run UI, so never auto-launch it.
-      gui_agent_restart_policy.suppress_launch();
+      // The reviewed GUI discovers this side-by-side instance. Keep its tray
+      // agent in the signed-in user's session, never in the elevated installer.
+      gui_agent_restart_policy.resume_supervision();
       gui_agent_log_limiter.reset();
     }
 
@@ -657,7 +656,7 @@ ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     }
 
     if (!gui_agent_restart_policy.launch_allowed()) {
-      gui_agent_restart_policy.suppress_launch();
+      gui_agent_restart_policy.resume_supervision();
       gui_agent_last_error = ERROR_SUCCESS;
       gui_agent_retry_at_ms = 0;
       gui_agent_backoff.reset();

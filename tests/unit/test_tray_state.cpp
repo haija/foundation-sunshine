@@ -9,6 +9,16 @@
 
 #include <src/tray/tray_state.h>
 
+TEST(TrayConfigurationTest, PublishesConfiguredTrayOwner) {
+#if SUNSHINE_TRAY
+  EXPECT_EQ(tray_state::to_json().at("owner"), "core");
+#elif SUNSHINE_GUI_TRAY
+  EXPECT_EQ(tray_state::to_json().at("owner"), "gui");
+#else
+  EXPECT_EQ(tray_state::to_json().at("owner"), "disabled");
+#endif
+}
+
 class TrayStateTest: public ::testing::Test {
 protected:
   void

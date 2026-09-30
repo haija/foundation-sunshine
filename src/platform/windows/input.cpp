@@ -16,6 +16,7 @@
 #include <ViGEm/Client.h>
 
 #include "dsu_server.h"
+#include "gamepad_auto_selection.h"
 #include "ds5/ds5_sidecar_client.h"
 #include "src/ds5/config.h"
 #include "keylayout.h"
@@ -1978,10 +1979,7 @@ namespace platf {
     // haptics with LI_CCAP_DS5_HAPTICS_PCM. This lets a client switch profiles
     // at runtime: DualSense gets the DS5 sidecar, while an Xbox or DS4 profile
     // is recreated through ViGEm as X360 or DS4 when it reconnects.
-    if (gamepad_mode == 1 &&
-        metadata.type == LI_CTYPE_PS &&
-        (metadata.capabilities & LI_CCAP_DS5_HAPTICS_PCM) &&
-        ds5_available) {
+    if (promote_automatic_to_dualsense(gamepad_mode, metadata.type, metadata.capabilities, ds5_available)) {
       gamepad_mode = 4;
       selection_source = "auto-selected by client-reported DualSense capability";
     }
